@@ -57,6 +57,19 @@ config.yaml
 # tracked and ignores this one.
 .claude/settings.local.json
 
+# Cache of the published instruction Docs, written by .claude/fetch-instructions.py
+.claude/instructions.md
+
+# Automation runtime files (logs, locks, per-run output)
+automation/cron.log
+automation/work.json
+automation/last-run.json
+automation/last-run.err
+automation/run-claude.cmd
+automation/.cron.lock
+automation/runbook.fetched.md
+automation/mention-watermark.json
+
 # Stray local scratch output, not a tool-generated file
 header_probe.csv
 

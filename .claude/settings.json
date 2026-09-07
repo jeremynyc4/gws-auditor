@@ -1,0 +1,15 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/fetch-instructions.py\" 2>/dev/null || true",
+            "statusMessage": "Loading standing instructions..."
+          }
+        ]
+      }
+    ]
+  }
+}
