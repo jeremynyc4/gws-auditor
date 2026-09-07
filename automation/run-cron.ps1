@@ -19,6 +19,13 @@ $cClaudeCmd   = Join-Path $env:APPDATA "npm\claude.cmd"
 $cWorkFile    = Join-Path $cAutoDir "work.json"
 $cLockFile    = Join-Path $cAutoDir ".cron.lock"
 $cLogFile     = Join-Path $cAutoDir "cron.log"
+# Resume record for a run the account limit cut short mid-Issue (added 2026-09-07 at
+# Jeremy's request, option 3 of the throttled-session discussion). Holds the session id,
+# the Issue, and the reset time; see fnWriteResume and the launch block for the flow.
+$cResumeFile  = Join-Path $cAutoDir "resume.json"
+$cResumeMaxDays_int = 7                   # drop a resume record older than this, whatever its state
+$cResumeGraceMin_int = 2                  # launch this long after the stated reset, not on the dot
+$cLimitPattern_str = 'session limit|usage limit|hit your limit|rate limit'
 $cRunbook     = "automation/claude-cron-runbook.md"   # pointer to the Doc, for humans
 $cRunbookFetched = "automation/runbook.fetched.md"   # generated text copy the run reads
 # The runbook is a Google Doc published to the web; each run that has work fetches
@@ -157,6 +164,110 @@ function fnLockHolderState_str {
   $vProcess_obj = Get-Process -Id $vHolderPid_int -ErrorAction SilentlyContinue
   if ($vProcess_obj -and $vProcess_obj.ProcessName -eq $cWrapperProcessName_str) { return "alive" }
   return "dead"
+}
+
+# >>>>> fnParseResetTime_dte <<<<<
+# Reads the reset time out of the account-limit message Claude returns, such as
+# "You've hit your session limit - resets 3:40am (America/New_York)", and returns it as
+# the next local date-time at that clock time, or $null when the message carries no time
+# this function recognises. The zone in the message is taken to be the laptop's own zone;
+# Jeremy's machine and account both sit in New York. A message giving a date as well
+# ("resets Sep 12, 4am" is the guessed shape for the weekly limit; confidence low) is
+# tried second. No match means the caller retries every tick, which is what happened
+# before this function existed, so a miss costs nothing new.
+function fnParseResetTime_dte($pMessage_str) {
+  $cTimeOnly_str = 'resets\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)'
+  $cDateAndTime_str = 'resets\s+([A-Za-z]{3,9}\s+\d{1,2})(?:,?\s*(?:at\s+)?(\d{1,2})(?::(\d{2}))?\s*(am|pm))?'
+  $cHoursPerHalfDay_int = 12
+  $vNow_dte = Get-Date
+  $vMatch_obj = [regex]::Match($pMessage_str, $cTimeOnly_str, 'IgnoreCase')
+  if ($vMatch_obj.Success) {
+    $vHour_int = [int]$vMatch_obj.Groups[1].Value
+    $vMinute_int = 0
+    if ($vMatch_obj.Groups[2].Success) { $vMinute_int = [int]$vMatch_obj.Groups[2].Value }
+    $vHalf_str = $vMatch_obj.Groups[3].Value.ToLower()
+    if ($vHalf_str -eq 'pm' -and $vHour_int -lt $cHoursPerHalfDay_int) { $vHour_int += $cHoursPerHalfDay_int }
+    if ($vHalf_str -eq 'am' -and $vHour_int -eq $cHoursPerHalfDay_int) { $vHour_int = 0 }
+    $vReset_dte = $vNow_dte.Date.AddHours($vHour_int).AddMinutes($vMinute_int)
+    if ($vReset_dte -le $vNow_dte) { $vReset_dte = $vReset_dte.AddDays(1) }
+    return $vReset_dte
+  }
+  $vMatch_obj = [regex]::Match($pMessage_str, $cDateAndTime_str, 'IgnoreCase')
+  if ($vMatch_obj.Success) {
+    try {
+      $vDate_dte = [datetime]::Parse($vMatch_obj.Groups[1].Value + " " + $vNow_dte.Year, [Globalization.CultureInfo]::InvariantCulture)
+      if ($vMatch_obj.Groups[2].Success) {
+        $vHour_int = [int]$vMatch_obj.Groups[2].Value
+        $vMinute_int = 0
+        if ($vMatch_obj.Groups[3].Success) { $vMinute_int = [int]$vMatch_obj.Groups[3].Value }
+        $vHalf_str = $vMatch_obj.Groups[4].Value.ToLower()
+        if ($vHalf_str -eq 'pm' -and $vHour_int -lt $cHoursPerHalfDay_int) { $vHour_int += $cHoursPerHalfDay_int }
+        if ($vHalf_str -eq 'am' -and $vHour_int -eq $cHoursPerHalfDay_int) { $vHour_int = 0 }
+        $vDate_dte = $vDate_dte.Date.AddHours($vHour_int).AddMinutes($vMinute_int)
+      }
+      # A date earlier than today with no year given belongs to next year (a January
+      # reset read in December).
+      if ($vDate_dte -lt $vNow_dte.Date) { $vDate_dte = $vDate_dte.AddYears(1) }
+      return $vDate_dte
+    } catch {
+      return $null
+    }
+  }
+  return $null
+}
+
+# >>>>> fnReadResume_obj <<<<<
+# Returns the pending resume record, or $null when there is none. A record that cannot
+# be parsed, or that is older than $cResumeMaxDays_int, is removed and logged rather
+# than left to trip every future tick.
+function fnReadResume_obj {
+  if (-not (Test-Path $cResumeFile)) { return $null }
+  $vRecord_obj = $null
+  try {
+    $vRecord_obj = Get-Content -Path $cResumeFile -Raw -Encoding utf8 | ConvertFrom-Json
+  } catch {
+    Write-Log "resume record was not readable; removing it: $($_.Exception.Message)"
+    Remove-Item -Path $cResumeFile -ErrorAction SilentlyContinue
+    return $null
+  }
+  if (-not $vRecord_obj.session_id -or -not $vRecord_obj.issue) {
+    Write-Log "resume record lacked a session id or Issue number; removing it"
+    Remove-Item -Path $cResumeFile -ErrorAction SilentlyContinue
+    return $null
+  }
+  $vAgeDays_flt = (New-TimeSpan -Start ([datetime]$vRecord_obj.recorded_at) -End (Get-Date)).TotalDays
+  if ($vAgeDays_flt -gt $cResumeMaxDays_int) {
+    Write-Log "resume record for #$($vRecord_obj.issue) is $([math]::Round($vAgeDays_flt,1)) days old; dropping it, the Issue starts fresh"
+    Remove-Item -Path $cResumeFile -ErrorAction SilentlyContinue
+    return $null
+  }
+  return $vRecord_obj
+}
+
+# >>>>> fnWriteResume <<<<<
+# Records the session a limit-hit run left behind, so the first tick after the reset can
+# continue it with --resume instead of starting the Issue over. resets_at is empty when
+# the message's reset time could not be read; the launch block then retries each tick.
+function fnWriteResume($pSessionId_str, $pIssue_int, $pMessage_str) {
+  $vReset_dte = fnParseResetTime_dte $pMessage_str
+  $vResetsAt_str = ""
+  if ($vReset_dte) { $vResetsAt_str = $vReset_dte.AddMinutes($cResumeGraceMin_int).ToString("s") }
+  $vRecord_obj = [ordered]@{
+    session_id  = $pSessionId_str
+    issue       = $pIssue_int
+    resets_at   = $vResetsAt_str
+    recorded_at = (Get-Date).ToString("s")
+    message     = $pMessage_str
+  }
+  # WriteAllText with a BOM-less encoding: Set-Content -Encoding utf8 writes a BOM, which
+  # ConvertFrom-Json on the read side does not always tolerate (2026-09-07 lesson).
+  $vJson_str = ($vRecord_obj | ConvertTo-Json -Compress)
+  [System.IO.File]::WriteAllText($cResumeFile, $vJson_str, (New-Object System.Text.UTF8Encoding($false)))
+  if ($vResetsAt_str) {
+    Write-Log "  resume record written for #$pIssue_int (session $pSessionId_str); nothing launches before $vResetsAt_str"
+  } else {
+    Write-Log "  resume record written for #$pIssue_int (session $pSessionId_str); reset time not read from the message, so every tick will try"
+  }
 }
 
 # --- lock: never run two at once; clear a lock whose wrapper is gone or too old ---
@@ -305,6 +416,34 @@ Close this issue once it is sorted. It will not be raised again while it is open
     }
     $vPrevFirst_int = $vFirst_int
 
+    # --- a run the account limit cut short: wait for the reset, then resume its session ---
+    # The reconcile step below hands a cut-short Issue back to Do Now and, when the run
+    # had already taken it on, records the run's session in $cResumeFile. Until the reset
+    # time in that record nothing launches (the limit is account-wide, so any launch would
+    # be turned away). After it, if the recorded Issue is the one about to be worked, the
+    # launch continues that session with --resume instead of starting the Issue over. A
+    # record whose Issue has left the bot's Do Now queue (Jeremy moved it, or another run
+    # finished it) is dropped. A record whose Issue is still queued but not first waits
+    # its turn; the fresh run ahead of it may reach the Issue on its own, in which case
+    # the record drops on the tick after.
+    $vResume_obj = fnReadResume_obj
+    $vResumeArgs_str = ""
+    $vResumeIssue_int = -1
+    if ($vResume_obj) {
+      $vResumeIssue_int = [int]$vResume_obj.issue
+      if (-not ($queueNums -contains $vResumeIssue_int)) {
+        Write-Log "resume record for #$vResumeIssue_int dropped: the Issue is no longer in the bot's Do Now queue"
+        Remove-Item -Path $cResumeFile -ErrorAction SilentlyContinue
+        $vResumeIssue_int = -1
+      } elseif ($vResume_obj.resets_at -and ((Get-Date) -lt [datetime]$vResume_obj.resets_at)) {
+        Write-Log "waiting: the account limit that cut short #$vResumeIssue_int resets at $($vResume_obj.resets_at); nothing launched this tick"
+        break
+      } elseif ($vFirst_int -eq $vResumeIssue_int) {
+        $vResumeArgs_str = "--resume $($vResume_obj.session_id)"
+        Write-Log "resuming session $($vResume_obj.session_id) for #$vResumeIssue_int (cut short $($vResume_obj.recorded_at))"
+      }
+    }
+
     $nDoNow = $doNowNums.Count
     $nWait  = [int]$work.do_now_waiting
     $nMent  = @($work.mentions).Count
@@ -379,6 +518,12 @@ Close this issue once it is sorted. It will not be raised again while it is open
     #
     # $cLaunchFlags carries any per-repo launch flags, such as --chrome for browser work.
     $prompt = "You are an unattended scheduled run. Read automation/runbook.fetched.md and follow it exactly. The work items detected for this run are in automation/work.json. Your first action on a Do Now item or a mentioned Issue is to set it to In Progress with automation/set-status.py; if you cannot do the work (account limit, no tokens, offline), set nothing to In Progress and exit. Read every Issue listed under new_comments before you start. Act only within the runbook's constraints, then exit."
+    # A resumed launch continues the cut-short session, so it already holds the runbook
+    # and its own progress; the prompt tells it what changed since: the reset has passed,
+    # the wrapper handed the Issue back to Do Now, and the board may have moved on.
+    if ($vResumeArgs_str) {
+      $prompt = "You are the same unattended scheduled run that the account's usage limit cut short; the limit has now reset. Continue the work on Issue #$vResumeIssue_int from where you left off. Before acting, re-read automation/runbook.fetched.md and automation/work.json and check the Issue's current status and latest comments on GitHub: the wrapper handed it back to Do Now, so set it to In Progress again with automation/set-status.py. Do not redo steps that are already committed or commented. Finish the Issue and close it out per the runbook, then exit."
+    }
 
     $cResultFile = Join-Path $cAutoDir "last-run.json"
     $cErrFile    = Join-Path $cAutoDir "last-run.err"
@@ -398,12 +543,12 @@ echo     Closing it early only interrupts the work in progress.
 echo.
 echo ==============================================================
 echo.
-call "$cClaudeCmd" -p "$prompt" $vModelArgs_str --permission-mode bypassPermissions $cLaunchFlags --add-dir "$cProjectDir" --output-format json < nul > "$cResultFile" 2> "$cErrFile"
+call "$cClaudeCmd" -p "$prompt" $vResumeArgs_str $vModelArgs_str --permission-mode bypassPermissions $cLaunchFlags --add-dir "$cProjectDir" --output-format json < nul > "$cResultFile" 2> "$cErrFile"
 "@
     } else {
       $launcherBody = @"
 @echo off
-call "$cClaudeCmd" -p "$prompt" $vModelArgs_str --permission-mode bypassPermissions $cLaunchFlags --add-dir "$cProjectDir" --output-format json < nul > "$cResultFile" 2> "$cErrFile"
+call "$cClaudeCmd" -p "$prompt" $vResumeArgs_str $vModelArgs_str --permission-mode bypassPermissions $cLaunchFlags --add-dir "$cProjectDir" --output-format json < nul > "$cResultFile" 2> "$cErrFile"
 "@
     }
     Set-Content -Path $cLauncher -Value $launcherBody -Encoding ascii
@@ -443,15 +588,24 @@ call "$cClaudeCmd" -p "$prompt" $vModelArgs_str --permission-mode bypassPermissi
 
     # pull the cost + short result out of the JSON envelope for the log
     $vRunBlocked_bol = $false
+    $vLimitHit_bol = $false
+    $vSessionId_str = ""
+    $vLimitMessage_str = ""
     try {
       $r = $result | ConvertFrom-Json
       $cost = [math]::Round([double]$r.total_cost_usd, 3)
       $summary = ($r.result -replace "\s+", " ")
       if ($summary.Length -gt 300) { $summary = $summary.Substring(0,300) + "..." }
       Write-Log "run complete: cost $cost USD | $summary"
+      $vSessionId_str = "$($r.session_id)"
       # A run that errored, or that the account's session or usage limit turned away, did
-      # no work and the next one would not either. Reconcile, then end the tick.
-      if ($r.is_error -eq $true -or $summary -match 'session limit|usage limit|hit your limit|rate limit') {
+      # no work and the next one would not either. Reconcile, then end the tick. The
+      # untruncated result is kept for the limit case, as the reset time sits in it.
+      if ($summary -match $cLimitPattern_str) {
+        $vLimitHit_bol = $true
+        $vLimitMessage_str = ("$($r.result)" -replace "\s+", " ")
+      }
+      if ($r.is_error -eq $true -or $vLimitHit_bol) {
         $vRunBlocked_bol = $true
       }
     } catch {
@@ -467,6 +621,7 @@ call "$cClaudeCmd" -p "$prompt" $vModelArgs_str --permission-mode bypassPermissi
     # to the bot (the detector filters on assignment), so an item Jeremy set to In Progress
     # himself is touched only if it is the bot's and was in Do Now when the run launched.
     # Mention issues are the run's to close out; the wrapper no longer touches them.
+    $vHandedBack_arr = @()
     if ($queueNums.Count -gt 0) {
       try {
         # One lean board read (1 GraphQL point) through set-status.py --list, which prints
@@ -481,10 +636,27 @@ call "$cClaudeCmd" -p "$prompt" $vModelArgs_str --permission-mode bypassPermissi
           if (($queueNums -contains $n) -and ($vParts_arr[1].Trim() -eq "In Progress")) {
             $null = & python $setStatus $n "Do Now" "In Progress" 2>&1
             Write-Log "  #$n left In Progress by a cut-short run -> back to Do Now"
+            $vHandedBack_arr += $n
           }
         }
       } catch {
         Write-Log "  could not read the board to reconcile the queue: $($_.Exception.Message)"
+      }
+    }
+
+    # --- remember or forget the session, for the resume path above ---
+    # A limit-hit run that had taken an Issue on (it was handed back just now) is worth
+    # continuing, so its session is recorded. A limit-hit run that took nothing on had done
+    # no work, so there is nothing to resume. A resumed launch that ended any other way,
+    # finished or failed, is over either way, so its record goes.
+    if ($vLimitHit_bol -and $vHandedBack_arr.Count -gt 0 -and $vSessionId_str) {
+      fnWriteResume $vSessionId_str ([int]$vHandedBack_arr[0]) $vLimitMessage_str
+    } elseif ($vResumeArgs_str) {
+      Remove-Item -Path $cResumeFile -ErrorAction SilentlyContinue
+      if ($vRunBlocked_bol) {
+        Write-Log "  resumed run for #$vResumeIssue_int did not complete; record dropped, the Issue starts fresh next time"
+      } else {
+        Write-Log "  resumed run for #$vResumeIssue_int finished; record dropped"
       }
     }
     if ($vRunBlocked_bol) {
