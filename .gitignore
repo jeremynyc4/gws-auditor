@@ -35,6 +35,10 @@ cache/
 reports/
 agent_reports/
 
+# Per-domain working directories (see docs/SOP_DOMAIN_SETUP.md) -- each one is
+# a user's own local config, credentials, and audit output, never shared code.
+/domains/
+
 # Credentials & secrets (NEVER commit these)
 credentials.json
 credentials/*.json
@@ -44,7 +48,17 @@ token.json
 *.key
 *.p12
 config.yaml
-credentials/dwd_scopes.txt
+# Matches at any depth (a plain "credentials/dwd_scopes.txt" only matched the
+# repo root, not domains/<domain>/credentials/dwd_scopes.txt -- found 2026-09-07
+# when that exact nested file showed up as untracked-and-not-ignored).
+**/dwd_scopes.txt
+
+# Local-only Claude Code settings; every other repo keeps only settings.json
+# tracked and ignores this one.
+.claude/settings.local.json
+
+# Stray local scratch output, not a tool-generated file
+header_probe.csv
 
 # OS
 .DS_Store
