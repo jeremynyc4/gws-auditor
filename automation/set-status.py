@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env python3
+#!/usr/bin/env python3
 # >>>>> set-status.py <<<<<
 # Reads or sets the GitHub Project #5 "Status" of the board item backing an issue.
 # Self-contained: looks up the project, the Status field, and the option id by name at

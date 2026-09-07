@@ -1,4 +1,4 @@
-﻿' >>>>> run-cron-hidden.vbs <<<<<
+' >>>>> run-cron-hidden.vbs <<<<<
 ' A launcher shim whose only job is to start run-cron.ps1 with no console window.
 '
 ' Task Scheduler was calling powershell.exe directly with -WindowStyle Hidden, but that

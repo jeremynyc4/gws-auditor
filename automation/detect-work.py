@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env python3
+#!/usr/bin/env python3
 # >>>>> detect-work.py <<<<<
 # Cheap, read-only detector for the Claude cron. Runs entirely on the GitHub CLI
 # (no model calls), so it is nearly free to run every few minutes. It answers one

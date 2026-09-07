@@ -1,4 +1,4 @@
-﻿# >>>>> run-cron.ps1 <<<<<
+# >>>>> run-cron.ps1 <<<<<
 # The scheduled wrapper. Runs every N minutes while Jeremy is logged on. It does the
 # CHEAP detection itself (GitHub CLI only, no model), and only launches Claude when
 # there is real work -- so idle ticks cost essentially nothing, while a trivial
@@ -28,7 +28,7 @@ $cRunbookUrl  = "https://docs.google.com/document/d/e/2PACX-1vTxMEI1ruta5ZRahK8K
 $cConverter   = Join-Path $env:USERPROFILE ".claude\fnPublishedDocToText.py"
 # No per-run spend flag. Removed 2026-09-05 at Jeremy's instruction: a run works its item
 # to completion; the cost is bounded by the work, not by a guess made in advance.
-$cLockMaxMin  = 55                        # treat a lock older than this as stale
+$cLockMaxMin  = 55                        # backstop: clear even a live holder's lock past this age
 $cMaxLaunchesPerTick = 6                  # most Claude launches one tick may make
 $cBotLogin    = "claudebot-ymerej"        # the account Claude posts as
 $cRepo         = "jeremynyc4/gws-auditor"
@@ -133,16 +133,46 @@ function fnBotTokenDaysLeft {
   }
 }
 
-# --- lock: never run two at once; auto-clear a stale lock ---
+# >>>>> fnWriteLock <<<<<
+# Writes the lock as two lines: the time, and this wrapper's own process id. The id lets
+# the next tick tell a wrapper that is still working from one that was killed from
+# outside (2026-09-07: another session force-stopped every wscript.exe on the machine
+# 100 seconds into a run; the orphaned run finished, but the lock sat for 55 minutes).
+function fnWriteLock {
+  $vLines_arr = @((Get-Date).ToString("s"), $PID)
+  Set-Content -Path $cLockFile -Value $vLines_arr -Encoding utf8
+}
+
+# >>>>> fnLockHolderState_str <<<<<
+# Reads the process id on the lock's second line and reports "alive" when a powershell
+# process with that id still exists, "dead" when none does, and "unknown" when the lock
+# predates the id line. The name check guards against the id being reused by an
+# unrelated process after the wrapper died.
+function fnLockHolderState_str {
+  $cWrapperProcessName_str = "powershell"
+  $vLines_arr = @(Get-Content -Path $cLockFile -ErrorAction SilentlyContinue)
+  $vHolderPid_int = 0
+  if ($vLines_arr.Count -lt 2) { return "unknown" }
+  if (-not [int]::TryParse($vLines_arr[1].Trim(), [ref]$vHolderPid_int)) { return "unknown" }
+  $vProcess_obj = Get-Process -Id $vHolderPid_int -ErrorAction SilentlyContinue
+  if ($vProcess_obj -and $vProcess_obj.ProcessName -eq $cWrapperProcessName_str) { return "alive" }
+  return "dead"
+}
+
+# --- lock: never run two at once; clear a lock whose wrapper is gone or too old ---
 if (Test-Path $cLockFile) {
   $age = (New-TimeSpan -Start (Get-Item $cLockFile).LastWriteTime -End (Get-Date)).TotalMinutes
-  if ($age -lt $cLockMaxMin) {
-    Write-Log "skip: another run holds the lock (age $([math]::Round($age,1))m)"
+  $vHolderState_str = fnLockHolderState_str
+  if ($vHolderState_str -eq "dead") {
+    Write-Log "clearing lock left by a wrapper that is no longer running (age $([math]::Round($age,1))m)"
+  } elseif ($age -lt $cLockMaxMin) {
+    Write-Log "skip: another run holds the lock (age $([math]::Round($age,1))m, holder $vHolderState_str)"
     return
+  } else {
+    Write-Log "clearing stale lock (age $([math]::Round($age,1))m, holder $vHolderState_str)"
   }
-  Write-Log "clearing stale lock (age $([math]::Round($age,1))m)"
 }
-Set-Content -Path $cLockFile -Value (Get-Date).ToString("s") -Encoding utf8
+fnWriteLock
 
 try {
   Set-Location $cProjectDir
@@ -334,7 +364,7 @@ Close this issue once it is sorted. It will not be raised again while it is open
 
     # Keep the lock fresh, so a long tick working several items is not taken for a
     # stale one by the next scheduled start.
-    Set-Content -Path $cLockFile -Value (Get-Date).ToString("s") -Encoding utf8
+    fnWriteLock
 
     # --- do the work ---
     # Runs with no console window at all by default ($cShowWindow = $false), because a
