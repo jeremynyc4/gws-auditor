@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<style>
+  body { font-family: Arial, sans-serif; font-size: 11pt; max-width: 750px; margin: 40px auto; color: #222; }
+  h1 { font-size: 20pt; }
+  h2 { font-size: 16pt; margin-top: 32px; }
+  h3 { font-size: 13pt; margin-top: 24px; }
+  .tab-label { font-size: 9pt; color: #888; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 4px; }
+  .copy-block {
+    background: #f4f4f4;
+    border-left: 4px solid #aaa;
+    padding: 10px 14px;
+    font-family: monospace;
+    font-size: 10pt;
+    margin: 10px 0;
+    white-space: pre-wrap;
+    word-break: break-all;
+  }
+  ol { margin-top: 6px; }
+  li { margin-bottom: 8px; }
+  .note { background: #fff8e1; border-left: 4px solid #f9a825; padding: 8px 14px; margin: 12px 0; font-size: 10pt; }
+  hr { border: none; border-top: 2px solid #ccc; margin: 40px 0; }
+</style>
+</head>
+<body>
+
+<!-- ============================================================ -->
+<!-- TAB 1: INSTALLATION                                          -->
+<!-- ============================================================ -->
+
+<p class="tab-label">Tab 1 of 2</p>
+<h1>Google Workspace Security Auditor — Installation</h1>
+
+<p>This page covers the one-time software installation required before you can run audits. Once complete, you will not need to repeat these steps.</p>
+
+<div class="note"><strong>Before you begin:</strong> These steps require downloading and installing software. You will need an internet connection, and your computer's security software may ask you to confirm each installation — click <strong>Yes</strong> or <strong>Allow</strong> when it does.</div>
+
+
+<h2>Part 1 — Install Python</h2>
+
+<p>Python is a programming language the audit tool is written in. Even if you are not a programmer, you need it installed for the tool to run.</p>
+
+<ol>
+  <li>Open your browser and go to:<br>
+    <div class="copy-block">https://www.python.org/downloads/</div>
+  </li>
+  <li>Click the large yellow <strong>Download Python</strong> button. The file will be named something like <em>python-3.x.x-amd64.exe</em>.</li>
+  <li>Once downloaded, open the file to start the installer.</li>
+  <li><strong>Important:</strong> On the first screen of the installer, check the box that says <strong>"Add Python to PATH"</strong> before clicking anything else. This box is near the bottom of the screen and is not checked by default.</li>
+  <li>Click <strong>Install Now</strong> and wait for it to finish.</li>
+  <li>Click <strong>Close</strong> when the installer is done.</li>
+</ol>
+
+<p><strong>To confirm it worked:</strong></p>
+<ol>
+  <li>Press the <strong>Windows key</strong>, type <strong>PowerShell</strong>, and press <strong>Enter</strong>.</li>
+  <li>In the window that opens, type the following and press Enter:</li>
+</ol>
+<div class="copy-block">python --version</div>
+<p>You should see a version number printed (e.g., <em>Python 3.12.4</em>). If you see an error, close and reopen PowerShell and try again.</p>
+
+
+<h2>Part 2 — Install the Google Cloud CLI</h2>
+
+<p>The Google Cloud CLI (also called "gcloud") is a tool that lets your computer communicate securely with Google's systems. The audit tool uses it to set up access to your Google Workspace domain.</p>
+
+<ol>
+  <li>Open your browser and go to:<br>
+    <div class="copy-block">https://cloud.google.com/sdk/docs/install</div>
+  </li>
+  <li>Under the <strong>Windows</strong> section, click the link to download the installer (it will be a file ending in <em>.exe</em>).</li>
+  <li>Open the downloaded file and follow the installer prompts, accepting the defaults on each screen.</li>
+  <li>On the final screen, leave the checkboxes as they are and click <strong>Finish</strong>. A terminal window will open briefly — this is normal.</li>
+  <li><strong>Close and reopen PowerShell</strong> so it picks up the newly installed tool.</li>
+</ol>
+
+<p><strong>To confirm it worked:</strong></p>
+<ol>
+  <li>In a new PowerShell window, type the following and press Enter:</li>
+</ol>
+<div class="copy-block">gcloud --version</div>
+<p>You should see version information. If you see an error, restart your computer and try again.</p>
+
+
+<h2>Part 3 — Download the Audit Tool</h2>
+
+<ol>
+  <li>In PowerShell, navigate to the folder where you want to store the tool. For example, to put it in your Projects folder:</li>
+</ol>
+<div class="copy-block">cd C:\Users\YourName\Projects</div>
+<p>(Replace <em>YourName</em> with your actual Windows username.)</p>
+
+<ol start="2">
+  <li>Download the tool by running:</li>
+</ol>
+<div class="copy-block">git clone https://github.com/argusssec-cloud/gws-auditor.git</div>
+<ol start="3">
+  <li>Move into the newly downloaded folder:</li>
+</ol>
+<div class="copy-block">cd gws-auditor</div>
+<ol start="4">
+  <li>Create an isolated workspace for the tool's dependencies:</li>
+</ol>
+<div class="copy-block">python -m venv .venv</div>
+<ol start="5">
+  <li>Activate that workspace:</li>
+</ol>
+<div class="copy-block">.venv\Scripts\activate</div>
+<p>You will know it worked when you see <strong>(.venv)</strong> at the start of the line in PowerShell.</p>
+
+<ol start="6">
+  <li>Install the tool and its dependencies:</li>
+</ol>
+<div class="copy-block">pip install -e .</div>
+<p>This may take a minute or two. When it finishes you will see a line that says <em>Successfully installed</em>.</p>
+
+<div class="note"><strong>Note:</strong> Every time you open a new PowerShell window to run an audit, you will need to navigate back to this folder and re-run step 5 (the <em>.venv\Scripts\activate</em> command) before doing anything else.</div>
+
+
+<!-- ============================================================ -->
+<!-- TAB 2: RUNNING AN AUDIT                                      -->
+<!-- ============================================================ -->
+
+<hr>
+
+<p class="tab-label">Tab 2 of 2</p>
+<h1>Google Workspace Security Auditor — Running an Audit</h1>
+
+<p>Follow these steps each time you want to set up and run an audit for a domain. You will repeat this process for each domain you audit.</p>
+
+<div class="note"><strong>Before you begin each domain:</strong> Make sure you know which browser profile you use for that domain's admin account. For example, if you manage <em>acme.com</em> in Chrome and <em>otherdomain.com</em> in Edge, you will need the right browser open and signed in at the right points in these steps.</div>
+
+
+<h2>Part 1 — Prepare PowerShell</h2>
+
+<ol>
+  <li>Open <strong>PowerShell</strong> (press the Windows key, type <strong>PowerShell</strong>, press Enter).</li>
+  <li>Navigate to the audit tool folder:</li>
+</ol>
+<div class="copy-block">cd C:\Users\YourName\Projects\gws-auditor</div>
+<p>(Replace <em>YourName</em> with your actual Windows username.)</p>
+<ol start="3">
+  <li>Activate the tool's workspace:</li>
+</ol>
+<div class="copy-block">.venv\Scripts\activate</div>
+<p>You will see <strong>(.venv)</strong> at the start of the line when this is active.</p>
+
+
+<h2>Part 2 — Sign In to Google Cloud</h2>
+
+<p>The setup script needs to sign in to Google Cloud on behalf of this domain's admin account. Because you may have multiple Google accounts across different browsers, these sign-in steps give you a link to paste into the correct browser rather than opening one automatically.</p>
+
+<h3>Step 2a — Standard sign-in</h3>
+
+<ol>
+  <li>In PowerShell, run:</li>
+</ol>
+<div class="copy-block">gcloud auth login --no-launch-browser</div>
+<ol start="2">
+  <li>PowerShell will display a long URL. Copy the entire URL.</li>
+  <li>Open the browser that is signed into this domain's admin account and paste the URL into the address bar.</li>
+  <li>Sign in if prompted, then click <strong>Allow</strong>.</li>
+  <li>Google will show you a verification code. Copy it and paste it back into PowerShell, then press <strong>Enter</strong>.</li>
+</ol>
+
+<h3>Step 2b — Application credentials sign-in</h3>
+
+<p>This is a second, separate sign-in that the tool also requires.</p>
+
+<ol>
+  <li>In PowerShell, run:</li>
+</ol>
+<div class="copy-block">gcloud auth application-default login --no-launch-browser</div>
+<ol start="2">
+  <li>Repeat the same process: copy the URL, paste it into the correct browser, sign in, copy the verification code, paste it into PowerShell.</li>
+</ol>
+
+
+<h2>Part 3 — Run the Setup Script</h2>
+
+<p>This script does the technical work of setting up a Google Cloud project and preparing the audit tool to access your domain. It takes about one to two minutes to complete.</p>
+
+<ol>
+  <li>In PowerShell, run the following, replacing the example values with your actual domain name and admin email address:</li>
+</ol>
+<div class="copy-block">python scripts/setup_domain.py yourdomain.com admin@yourdomain.com</div>
+
+<p>For example, for a domain called <em>acme.com</em>:</p>
+<div class="copy-block">python scripts/setup_domain.py acme.com admin@acme.com</div>
+
+<p>The script will display progress as it works. When it finishes, it will print a section that looks like this:</p>
+
+<div class="copy-block">======================================================================
+MANUAL STEP REQUIRED: Domain-Wide Delegation
+======================================================================
+
+Client ID:
+  108603865820338527706
+
+OAuth scopes:
+  https://www.googleapis.com/auth/admin.directory.domain.readonly,...</div>
+
+<p><strong>Leave this PowerShell window open.</strong> You will need the Client ID number and the OAuth scopes text in the next step.</p>
+
+
+<h2>Part 4 — Grant Access in the Google Admin Console</h2>
+
+<p>This is the one step that cannot be automated. It tells Google that the audit tool has permission to read security data for your domain.</p>
+
+<ol>
+  <li>Open the browser that is signed into this domain's admin account and go to:<br>
+    <div class="copy-block">https://admin.google.com</div>
+  </li>
+  <li>In the left-hand menu, click <strong>Security</strong>.</li>
+  <li>Click <strong>Access and data control</strong>, then <strong>API controls</strong>.</li>
+  <li>Click <strong>Manage Domain Wide Delegation</strong>.</li>
+  <li>Click <strong>Add new</strong>.</li>
+  <li>In the <strong>Client ID</strong> field, paste the number printed by the script in Part 3 (e.g., <em>108603865820338527706</em>). The number will be different for each domain.</li>
+  <li>In the <strong>OAuth scopes</strong> field, paste the long line of text printed by the script. It begins with <em>https://www.googleapis.com/auth/admin.directory…</em> and continues without line breaks.</li>
+  <li>Click <strong>Authorize</strong>.</li>
+</ol>
+
+<div class="note"><strong>If a dialog asks whether to overwrite an existing entry:</strong> Click Yes only if the Client ID shown matches the number the script just printed. If the numbers are different, click Cancel and contact your administrator.</div>
+
+
+<h2>Part 5 — Wait for Google to Activate the Access</h2>
+
+<p>After clicking Authorize, Google takes up to 15 minutes to apply the change. You do not need to do anything during this time — you can move on to other work and come back.</p>
+
+
+<h2>Part 6 — Run the Audit</h2>
+
+<ol>
+  <li>Return to the PowerShell window from earlier (with <strong>(.venv)</strong> showing).</li>
+  <li>Run the audit, replacing <em>yourdomain.com</em> with the actual domain:</li>
+</ol>
+<div class="copy-block">python -m gws_auditor --config domains/yourdomain.com/config.yaml</div>
+
+<p>For example:</p>
+<div class="copy-block">python -m gws_auditor --config domains/acme.com/config.yaml</div>
+
+<p>The audit runs for several minutes. When it finishes, it displays a summary and saves the results to a reports folder.</p>
+
+<div class="note"><strong>If you see "unauthorized_client" errors:</strong> The 15-minute activation period from Part 5 has not finished yet. Wait a few more minutes and run the command again.</div>
+
+
+<h2>Part 7 — Open the Report</h2>
+
+<ol>
+  <li>Open <strong>File Explorer</strong> and navigate to:</li>
+</ol>
+<div class="copy-block">C:\Users\YourName\Projects\gws-auditor\domains\yourdomain.com\reports</div>
+<ol start="2">
+  <li>You will see one or more files with names that include today's date. Open the file ending in <strong>.html</strong> — it will open in your browser as an interactive report.</li>
+</ol>
+
+
+<h2>Part 8 — Before Your Next Audit of This Domain</h2>
+
+<p>As a security measure, the audit tool automatically deletes the key file it uses to access your domain once the audit is complete. This means you need to generate a new one before running the audit again.</p>
+
+<ol>
+  <li>Open your browser and go to:<br>
+    <div class="copy-block">https://console.cloud.google.com</div>
+  </li>
+  <li>At the top of the screen, click the project dropdown and select the project for this domain (it will be named something like <em>yourdomain-com-audit</em>).</li>
+  <li>In the left-hand menu, click <strong>IAM &amp; Admin</strong>, then <strong>Service Accounts</strong>.</li>
+  <li>Click on the service account named <strong>gws-auditor</strong>.</li>
+  <li>Click the <strong>Keys</strong> tab.</li>
+  <li>Click <strong>Add Key → Create new key → JSON → Create</strong>.</li>
+  <li>A file will download automatically. Move it into:<br>
+    <div class="copy-block">C:\Users\YourName\Projects\gws-auditor\domains\yourdomain.com\credentials\</div>
+  </li>
+  <li>Open the file <em>config.yaml</em> in that domain's folder in a text editor (right-click → Open with → Notepad), and update the line that starts with <strong>credentials_file:</strong> to match the new filename.</li>
+  <li>You are now ready to run Part 6 again.</li>
+</ol>
+
+<div class="note"><strong>Tip:</strong> Alternatively, you can skip steps 1–8 above and re-run the setup script from Part 3. It will detect that the project and service account already exist and only create a new key file and update your config automatically.</div>
+
+</body>
+</html>
