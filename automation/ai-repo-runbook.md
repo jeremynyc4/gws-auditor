@@ -1,6 +1,6 @@
-# Claude Cron Runbook
+# AI Repo Runbook
 
-The runbook for this cron lives in the Google Doc **Claude Cron Runbook Split**:
+The runbook for this cron lives in the Google Doc **AI Repo Runbook**:
 https://docs.google.com/document/d/1OqzJt01jwZLiZhNbK-_i6TLlqZrsrs-yTV2ZKJYJlak/edit
 
 Its published copy is:
